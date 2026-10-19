@@ -96,9 +96,21 @@ public class IdentityFactoryFinal extends androidx.core.app.CoreComponentFactory
     }
 
     private static void setStaticString(Class<?> cls, String name, String value) {
+        Field f;
         try {
-            Field f = cls.getDeclaredField(name);
+            f = cls.getDeclaredField(name);
             f.setAccessible(true);
+        } catch (Throwable t) {
+            return;
+        }
+        // 1) Android (ART) par accessible static final field seedha set ho jata hai
+        try {
+            f.set(null, value);
+            if (value.equals(f.get(null))) return;
+        } catch (Throwable ignored) {
+        }
+        // 2) Fallback: Unsafe
+        try {
             Object unsafe = getUnsafe();
             if (unsafe != null) {
                 Class<?> uc = unsafe.getClass();
@@ -108,8 +120,6 @@ public class IdentityFactoryFinal extends androidx.core.app.CoreComponentFactory
                 Object b = base.invoke(unsafe, f);
                 long o = (Long) off.invoke(unsafe, f);
                 put.invoke(unsafe, b, o, value);
-            } else {
-                f.set(null, value);
             }
         } catch (Throwable ignored) {
         }
