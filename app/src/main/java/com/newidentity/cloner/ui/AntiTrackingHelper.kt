@@ -5,7 +5,8 @@ import com.fspacecore.PackageRule
 import java.util.*
 
 /**
- * Anti-Tracking and Spoofing Helper Function
+ * Advanced Anti-Detection & Spoofing Helper
+ * Yeh code apps ko detect karne se rokta hai ki woh clone ya virtual space mein chal rahi hain.
  */
 fun applyAntiTrackingAndClone(packageName: String, userId: Int) {
     val random = Random()
@@ -13,18 +14,22 @@ fun applyAntiTrackingAndClone(packageName: String, userId: Int) {
     val regions = listOf("US", "GB", "DE", "FR", "JP", "IN")
     val timezones = listOf("America/New_York", "Europe/London", "Asia/Tokyo", "Asia/Karachi", "Australia/Sydney")
 
+    // Advanced Hiding Rules
     val rule = PackageRule.Builder(packageName)
-        .isHideRoot(true)
-        .isHideSim(true)
-        .isHideVpn(true)
-        .isHidePath(true)
+        .isHideRoot(true)       // Root access ko poori tarah hide karta hai
+        .isHideSim(true)        // SIM card aur carrier tracking ko block karta hai
+        .isHideVpn(true)        // VPN detection ko bypass karta hai
+        .isHidePath(true)       // Virtual space ke internal storage paths ko chupata hai
         .setLanguage(languages[random.nextInt(languages.size)])
         .setRegion(regions[random.nextInt(regions.size)])
         .setTimeZone(timezones[random.nextInt(timezones.size)])
         .build()
 
-    FCore.get().addRule(rule)
     try {
+        // FCore mein rules register karein
+        FCore.get().addRule(rule)
+        
+        // App ko virtual user space mein install karein
         FCore.get().installPackageAsUser(packageName, userId)
     } catch (e: Exception) {
         e.printStackTrace()
