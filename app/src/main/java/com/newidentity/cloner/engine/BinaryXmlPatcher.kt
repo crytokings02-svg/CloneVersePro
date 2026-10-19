@@ -150,6 +150,168 @@ object BinaryXmlPatcher {
     }
 
     /**
+     * Clone ka naam badalna (masalan "WhatsApp 1"): application aur LAUNCHER activity ke
+     * android:label ko seedha text (string) bana deta hai. Naya naam string pool ke aakhir mein
+     * jodta hai (purani strings ki index nahi hilti). Kuch bhi gadbad ho to ORIGINAL bytes wapas.
+     */
+    fun patchLabel(bytes: ByteArray, newLabel: String): ByteArray {
+        return try {
+            patchLabelInternal(bytes, newLabel) ?: bytes
+        } catch (e: Throwable) {
+            bytes
+        }
+    }
+
+    private fun patchLabelInternal(bytes: ByteArray, newLabel: String): ByteArray? {
+        if (newLabel.isEmpty() || bytes.size < 8) return null
+        val src = bytes.copyOf()
+        val buf = ByteBuffer.wrap(src).order(ByteOrder.LITTLE_ENDIAN)
+        fun u16(o: Int) = buf.getShort(o).toInt() and 0xFFFF
+        fun u32(o: Int) = buf.getInt(o)
+        if (u16(0) != 0x0003) return null
+
+        // Pehla chunk string pool hona chahiye
+        val poolOff = 8
+        if (u16(poolOff) != 0x0001) return null
+        val poolHeader = u16(poolOff + 2)
+        val poolSize = u32(poolOff + 4)
+        val stringCount = u32(poolOff + 8)
+        val styleCount = u32(poolOff + 12)
+        val flags = u32(poolOff + 16)
+        val stringsStart = u32(poolOff + 20)
+        if (styleCount != 0 || poolHeader != 28 || poolOff + poolSize > src.size) return null
+        val utf8 = (flags and (1 shl 8)) != 0
+
+        val names = arrayOfNulls<String>(stringCount)
+        for (i in 0 until stringCount) {
+            val o = poolOff + stringsStart + u32(poolOff + poolHeader + i * 4)
+            try {
+                if (utf8) {
+                    var p = o
+                    p += varLen8(src, p).second
+                    val (byteLen, used) = varLen8(src, p); p += used
+                    names[i] = String(src, p, byteLen, Charsets.UTF_8)
+                } else {
+                    var charLen = u16(o); var p = o + 2
+                    if (charLen and 0x8000 != 0) { charLen = ((charLen and 0x7FFF) shl 16) or u16(p); p += 2 }
+                    names[i] = String(src, p, charLen * 2, Charsets.UTF_16LE)
+                }
+            } catch (e: Exception) { names[i] = null }
+        }
+        fun nameAt(i: Int): String? = if (i in 0 until stringCount) names[i] else null
+
+        val newIdx = stringCount
+        var patched = 0
+        var launcherLabelAttr = -1   // abhi wali activity ke label attribute ka offset
+        val patchedAttrs = HashSet<Int>()
+
+        fun setLabel(attrOff: Int) {
+            if (!patchedAttrs.add(attrOff)) return
+            buf.putInt(attrOff + 8, newIdx)          // rawValue
+            src[attrOff + 15] = 0x03                  // dataType = string
+            buf.putInt(attrOff + 16, newIdx)         // data
+            patched++
+        }
+
+        var off = poolOff + poolSize
+        while (off + 8 <= src.size) {
+            val type = u16(off); val size = u32(off + 4)
+            if (size <= 0 || off + size > src.size) return null
+            if (type == 0x0102 && size >= 36) {
+                val elem = nameAt(u32(off + 20))
+                val attrStart = u16(off + 24)
+                val attrSize = u16(off + 26).let { if (it == 0) 20 else it }
+                val attrCount = u16(off + 28)
+                var labelAttr = -1
+                var catValue: String? = null
+                var aOff = off + 16 + attrStart
+                for (a in 0 until attrCount) {
+                    if (aOff + 20 > off + size) break
+                    val an = nameAt(u32(aOff + 4))
+                    if (an == "label") labelAttr = aOff
+                    if (elem == "category" && an == "name") {
+                        val raw = u32(aOff + 8)
+                        catValue = nameAt(if (raw != -1) raw else u32(aOff + 16))
+                    }
+                    aOff += attrSize
+                }
+                when (elem) {
+                    "application" -> if (labelAttr >= 0) setLabel(labelAttr)
+                    "activity", "activity-alias" -> launcherLabelAttr = labelAttr
+                    "category" ->
+                        if (catValue == "android.intent.category.LAUNCHER" && launcherLabelAttr >= 0)
+                            setLabel(launcherLabelAttr)
+                }
+            }
+            off += size
+        }
+        if (patched == 0) return null
+
+        // Naya string encode karo
+        val enc: ByteArray = if (utf8) {
+            val b = newLabel.toByteArray(Charsets.UTF_8)
+            if (newLabel.length > 127 || b.size > 127) return null
+            byteArrayOf(newLabel.length.toByte(), b.size.toByte()) + b + byteArrayOf(0)
+        } else {
+            val b = newLabel.toByteArray(Charsets.UTF_16LE)
+            if (newLabel.length > 0x7FFF) return null
+            byteArrayOf((newLabel.length and 0xFF).toByte(), ((newLabel.length shr 8) and 0xFF).toByte()) +
+                b + byteArrayOf(0, 0)
+        }
+
+        // Naya pool: header + (offsets + 1 naya) + purana string data + naya string, 4 byte padded
+        val oldOffsetsEnd = poolOff + poolHeader + stringCount * 4
+        val oldDataStart = poolOff + stringsStart
+        val oldDataEnd = poolOff + poolSize
+        val oldData = src.copyOfRange(oldDataStart, oldDataEnd)
+        val newStringRel = oldData.size
+        var newPoolSize = poolHeader + (stringCount + 1) * 4 + oldData.size + enc.size
+        val pad = (4 - newPoolSize % 4) % 4
+        newPoolSize += pad
+
+        val pool = ByteBuffer.allocate(newPoolSize).order(ByteOrder.LITTLE_ENDIAN)
+        pool.put(src, poolOff, poolHeader)                       // purana header
+        pool.putInt(4, newPoolSize)                              // size
+        pool.putInt(8, stringCount + 1)                          // stringCount
+        pool.putInt(20, stringsStart + 4)                        // stringsStart (ek offset zyada)
+        pool.position(poolHeader)
+        pool.put(src, poolOff + poolHeader, stringCount * 4)     // purane offsets
+        pool.putInt(newStringRel)                                // naye string ka offset
+        pool.put(oldData)
+        pool.put(enc)
+        // baaki padding zero
+
+        val rest = src.copyOfRange(oldDataEnd, src.size)
+        val out = ByteArray(poolOff + newPoolSize + rest.size)
+        System.arraycopy(src, 0, out, 0, poolOff)
+        System.arraycopy(pool.array(), 0, out, poolOff, newPoolSize)
+        System.arraycopy(rest, 0, out, poolOff + newPoolSize, rest.size)
+        ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN).putInt(4, out.size)
+
+        // Verify: chunks theek chalte hain aur naya string wapas parh hota hai
+        val ob = ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN)
+        var chk = 8
+        while (chk + 8 <= out.size) {
+            val sz = ob.getInt(chk + 4)
+            if (sz <= 0) return null
+            chk += sz
+        }
+        if (chk != out.size) return null
+        val so = poolOff + (stringsStart + 4) + ob.getInt(poolOff + poolHeader + stringCount * 4)
+        val readBack = if (utf8) {
+            var p = so
+            p += varLen8(out, p).second
+            val (bl, used) = varLen8(out, p); p += used
+            String(out, p, bl, Charsets.UTF_8)
+        } else {
+            val cl = (out[so].toInt() and 0xFF) or ((out[so + 1].toInt() and 0xFF) shl 8)
+            String(out, so + 2, cl * 2, Charsets.UTF_16LE)
+        }
+        if (readBack != newLabel) return null
+        return out
+    }
+
+    /**
      * resources.arsc fix (v2): sirf ResTable_package chunks (type 0x0200) ke
      * name field (128 UTF-16 chars wali sabit jaga) mein package badlo.
      */
