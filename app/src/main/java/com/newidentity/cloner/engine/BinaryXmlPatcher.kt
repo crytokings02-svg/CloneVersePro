@@ -102,13 +102,18 @@ object BinaryXmlPatcher {
                                             replace[strIdx] = newPkg
 
                                         elemName == "provider" && attrName == "authorities" ->
-                                            replace[strIdx] = value.split(";").joinToString(";") { part ->
-                                                if (part == oldPkg || part.startsWith("$oldPkg.")) newPkg + part.substring(oldPkg.length) else part
-                                            }
+                                            // oldPkg authority ke SHURU mein hi nahi, beech mein bhi ho sakta hai
+                                            // (masalan "com.github.razerdp.<pkg>.BasePopupInitializer")
+                                            replace[strIdx] = value.replace(oldPkg, newPkg)
 
                                         (elemName == "permission" || elemName == "permission-group" || elemName == "permission-tree")
-                                                && attrName == "name" && value.startsWith("$oldPkg.") ->
-                                            replace[strIdx] = newPkg + value.substring(oldPkg.length)
+                                                && attrName == "name" && value.contains(oldPkg) ->
+                                            replace[strIdx] = value.replace(oldPkg, newPkg)
+
+                                        // Apni hi custom permission jo uses-permission mein bhi likhi hoti hai
+                                        (elemName == "uses-permission" || elemName == "uses-permission-sdk-23")
+                                                && attrName == "name" && value.contains(oldPkg) ->
+                                            replace[strIdx] = value.replace(oldPkg, newPkg)
 
                                         (elemName == "uses-permission" || elemName == "uses-permission-sdk-23")
                                                 && attrName == "name" && breakPermissions.contains(value) -> {
