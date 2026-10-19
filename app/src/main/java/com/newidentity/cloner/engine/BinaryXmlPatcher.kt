@@ -41,6 +41,19 @@ object BinaryXmlPatcher {
         fun u32(off: Int) = buf.getInt(off)
         if (out.size < 8 || (u16(0) != 0x0003 && u16(0) != 0x0002)) return ManifestResult(bytes, false)
 
+        // Jin authorities/permissions mein package ka naam hi nahi (masalan Facebook SDK ka
+        // "com.facebook.app.FacebookContentProvider<id>") unka bhi unique hona zaroori hai,
+        // warna asli app ke saath CONFLICTING_PROVIDER aata hai. Aakhri character badal do
+        // (barabar length): clone ke suffix wala character, ya agar wohi ho to 'z'/'y'.
+        fun uniq(value: String): String {
+            if (value.isEmpty()) return value
+            val c = newPkg.last()
+            val repl = if (value.last() == c) (if (c == 'z') 'y' else 'z') else c
+            return value.dropLast(1) + repl
+        }
+        fun renameAuthorityOrPerm(value: String): String =
+            if (value.contains(oldPkg)) value.replace(oldPkg, newPkg) else uniq(value)
+
         var pool: StrPool? = null
         val replace = HashMap<Int, String>()
         var runtime = false
@@ -104,11 +117,11 @@ object BinaryXmlPatcher {
                                         elemName == "provider" && attrName == "authorities" ->
                                             // oldPkg authority ke SHURU mein hi nahi, beech mein bhi ho sakta hai
                                             // (masalan "com.github.razerdp.<pkg>.BasePopupInitializer")
-                                            replace[strIdx] = value.replace(oldPkg, newPkg)
+                                            replace[strIdx] = value.split(";").joinToString(";") { renameAuthorityOrPerm(it) }
 
                                         (elemName == "permission" || elemName == "permission-group" || elemName == "permission-tree")
-                                                && attrName == "name" && value.contains(oldPkg) ->
-                                            replace[strIdx] = value.replace(oldPkg, newPkg)
+                                                && attrName == "name" ->
+                                            replace[strIdx] = renameAuthorityOrPerm(value)
 
                                         // Apni hi custom permission jo uses-permission mein bhi likhi hoti hai
                                         (elemName == "uses-permission" || elemName == "uses-permission-sdk-23")
