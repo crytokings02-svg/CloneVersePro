@@ -34,6 +34,20 @@ jobs:
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
+      - name: Build clone runtime dex
+        shell: bash
+        run: |
+          set -e
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          AJ="$SDK/platforms/android-34/android.jar"
+          D8="$SDK/build-tools/34.0.0/d8"
+          rm -rf rt && mkdir -p rt/classes rt/dex
+          javac --release 8 -cp "$AJ" -d rt/classes $(find clone-runtime-src -name '*.java')
+          (cd rt/classes && jar cf ../runtime.jar com && jar cf ../stub.jar androidx)
+          "$D8" --release --min-api 24 --lib "$AJ" --classpath rt/stub.jar --output rt/dex rt/runtime.jar
+          cp rt/dex/classes.dex app/src/main/assets/clone_runtime.dex
+          ls -l app/src/main/assets/clone_runtime.dex
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
