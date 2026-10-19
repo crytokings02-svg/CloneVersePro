@@ -1,0 +1,9 @@
+<resources>
+    <color name="ic_launcher_background">#0F1330</color>
+    <color name="brand_primary">#3F51B5</color>
+    <color name="brand_secondary">#7C4DFF</color>
+    <color name="brand_accent">#00C853</color>
+    <color name="brand_orange">#FF6D00</color>
+    <color name="surface_soft">#F3F5FF</color>
+    <color name="text_secondary">#5F6368</color>
+</resources>
