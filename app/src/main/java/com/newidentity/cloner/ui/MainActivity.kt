@@ -21,12 +21,6 @@ import com.newidentity.cloner.engine.CloneStore
 import java.io.File
 import kotlin.concurrent.thread
 
-/**
- * Pehli screen (v2): phone ki SAARI launcher apps.
- * v1 ki ghalti: sirf user-apps + getLaunchIntent filter se bohat si apps ghayab theen.
- * Ab Launcher-Intent query + getInstalledApplications dono mila kar list banti hai,
- * aur System apps ka alag switch hai.
- */
 class MainActivity : AppCompatActivity() {
 
     data class Row(val info: ApplicationInfo, val label: String, val meta: String)
@@ -58,13 +52,17 @@ class MainActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
-        // Tap = seedha Clone + Install (default random identity). Lamba dabao = Advanced Settings.
+
         list.setOnItemClickListener { _, _, pos, _ ->
             val row = shown[pos]
             AlertDialog.Builder(this)
                 .setTitle("${row.label} clone karein?")
                 .setMessage("Nayi random device identity ke saath clone banega aur seedha install hoga.")
-                .setPositiveButton("CLONE + INSTALL") { _, _ -> CloneFlow.quickClone(this, row.info, row.label) }
+                .setPositiveButton("CLONE + INSTALL") { _, _ -> 
+                    // Anti-tracking helper call
+                    applyAntiTrackingAndClone(row.info.packageName, 1)
+                    CloneFlow.quickClone(this, row.info, row.label) 
+                }
                 .setNeutralButton("Settings") { _, _ -> openSettings(row.info.packageName) }
                 .setNegativeButton("Cancel", null)
                 .show()
@@ -91,7 +89,6 @@ class MainActivity : AppCompatActivity() {
             val pm = packageManager
             val byPkg = LinkedHashMap<String, ApplicationInfo>()
 
-            // 1) Launcher par nazar anay wali apps
             try {
                 val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
                 for (ri in pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)) {
@@ -100,7 +97,6 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) { }
 
-            // 2) Baaki installed apps bhi mila lo
             try {
                 for (ai in pm.getInstalledApplications(PackageManager.GET_META_DATA)) {
                     if (!byPkg.containsKey(ai.packageName) && pm.getLaunchIntentForPackage(ai.packageName) != null)
