@@ -144,7 +144,10 @@ object CloneEngine {
                     val res = BinaryXmlPatcher.patchManifest(
                         raw, oldPkg, newPkg, breakPerms, options.useDeviceRuntime && isBase
                     )
-                    manifestBytes = res.bytes
+                    // Clone ka naam: "WhatsApp 1", "WhatsApp 2" ... (sirf base APK mein)
+                    manifestBytes = if (isBase)
+                        BinaryXmlPatcher.patchLabel(res.bytes, "${options.sourceName} ${options.cloneNumber}")
+                    else res.bytes
                     runtimeInjected = res.runtimeInjected
                 }
 
