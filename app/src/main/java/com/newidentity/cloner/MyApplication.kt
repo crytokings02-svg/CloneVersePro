@@ -1,4 +1,4 @@
-package com.newidentity.cloner
+ com.newidentity.cloner
 
 import android.app.Application
 import android.content.Context
