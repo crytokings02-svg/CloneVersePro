@@ -1,3 +1,12 @@
 <resources>
-    <string name="app_name">CloneVerse Pro</string>
+    <string name="app_name">CloneVersePro</string>
+
+    <string name="clone_dialog_title">Clone %1$s?</string>
+    <string name="clone_dialog_message">A clone with a new device profile will be created and installed.</string>
+    <string name="action_clone_install">CLONE + INSTALL</string>
+    <string name="action_settings">Settings</string>
+    <string name="clone_failed">Cloning failed. Check logs for details.</string>
+    <string name="status_loading">Loading apps…</string>
+    <string name="status_no_apps">No apps found</string>
+    <string name="status_hint">Tap an app to clone it (long-press for settings):</string>
 </resources>
