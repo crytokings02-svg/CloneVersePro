@@ -106,7 +106,8 @@ object CloneFlow {
         val launch = activity.packageManager.getLaunchIntentForPackage(rec.clonedPackage)
         val b = AlertDialog.Builder(activity)
             .setTitle("Clone Install Ho Gaya!")
-            .setMessage("${rec.sourceName} (Clone)\n${rec.clonedPackage}\nDevice: ${rec.identity.device.label}")
+            .setMessage("${rec.sourceName} (Clone)\n${rec.clonedPackage}\nDevice: ${rec.identity.device.label}" +
+                    if (rec.runtimeInjected) "" else "\n\n⚠ Is app mein Device badalna support nahi (device asli hi dikhega).")
             .setNegativeButton("Baad Mein", null)
         if (launch != null) b.setPositiveButton("RUN CLONE") { _, _ -> activity.startActivity(launch) }
         b.show()
